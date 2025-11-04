@@ -3,9 +3,9 @@
 // Teensy + L298N (Burst-PWM Safe)
 // -----------------------------------------------------
 // Coordinate frame:
-//   +X → right strafe
+//   +X → clockwise rotation
 //   +Y → forward
-//   +R → clockwise rotation
+//   +R → right strafe
 // Verified wiring (matches ULTRACLEAN spin test):
 //   FL = FRONT_IN1, FRONT_IN2, FRONT_ENA
 //   FR = FRONT_IN3, FRONT_IN4, FRONT_ENB

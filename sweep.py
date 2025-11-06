@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-import serial, time, sys
+import serial, time, math
 
 # ---------------- Serial Setup ----------------
 PORT = "/dev/ttyACM0"
 BAUD = 9600
+ser = serial.Serial(PORT, BAUD, timeout=1)
 FRAME = 0.05    # 50 ms → 20 Hz control loop
-
-print("🟢 Initializing serial link to Teensy...")
-ser = serial.Serial(PORT, BAUD, timeout=0.1)
-time.sleep(2)  # give Teensy time to boot
 
 # ---------------- Motion Helpers ---------------
 def send(vx, vy, w):
-    """Send velocity packet to Teensy."""
+    """
+    Send velocity packet to Teensy.
+    NOTE: baseline convention => VX = rotation, VY = forward, W = strafe
+    """
     packet = f"VX:{int(vx)},VY:{int(vy)},W:{int(w)}\n"
     ser.write(packet.encode("utf-8"))
     ser.flush()
@@ -20,70 +20,59 @@ def send(vx, vy, w):
 def stop():
     ser.write(b"S\n")
     ser.flush()
-    print("🛑 STOP command sent.")
-    time.sleep(0.25)
-
-def check_color_detection():
-    """
-    Read from Teensy serial.
-    Returns True if HuskyLens detects color ("Color:ID1" or "K1").
-    """
-    try:
-        line = ser.readline().decode("utf-8", errors="ignore").strip()
-        if line:
-            if "Color:ID1" in line or line.startswith("K1"):
-                print(f"🎨 Color Detected → {line}")
-                return True
-    except Exception as e:
-        print("Serial read error:", e)
-    return False
 
 def drive(vx, vy, w, duration):
-    """
-    Hold velocity for duration seconds,
-    but if color detected — STOP FOREVER.
-    """
+    """Hold a velocity for given seconds."""
     t0 = time.time()
     while time.time() - t0 < duration:
-        if check_color_detection():
-            stop()
-            print("🧠 DORA has detected color and will remain stopped forever.")
-            ser.close()
-            sys.exit(0)  # terminate script permanently
         send(vx, vy, w)
         time.sleep(FRAME)
     stop()
+    time.sleep(0.25)   # small settle delay
 
-# ---------------- Square Exploration Pattern -----------
-def pattern_square_explore(side_time=1.2, turn_time=0.35,
-                           speed_pwm=130, turn_pwm=100, passes=4):
+# ---------------- Zig-Zag Forward Scan Pattern -----------
+def pattern_zigzag_scan(width_s=1.0, height_s=1.2, passes=6,
+                        forward_pwm=130, strafe_pwm=90, turn_pwm=0):
     """
-    Forward-only square pattern.
-    Stops permanently if color detected at any point.
+    Continuous forward 'zig-zag' pattern:
+    - move diagonally forward-right
+    - move diagonally forward-left
+    - repeat, always progressing forward
     """
-    print(f"🟢 Starting DORA EXPLORA pattern ({passes} sides)...")
+    print(f"🟢 Starting DORA ZIG-ZAG SCAN ({passes} segments)...")
 
-    for i in range(passes):
-        print(f"🟩 Side {i+1}/{passes}: Moving forward")
-        drive(0, speed_pwm, 0, side_time)
+    direction = 1  # start strafing right first
+    for p in range(passes):
+        print(f"🟩 Segment {p+1}/{passes}: moving forward + {'right' if direction==1 else 'left'}")
 
-        print("↩️ Turning right 90°")
-        drive(turn_pwm, 0, 0, turn_time)
+        # combine forward motion and lateral strafe
+        vy = forward_pwm
+        w = strafe_pwm * direction
+        drive(0, vy, w, height_s)
+
+        # gentle yaw correction if you want a subtle camera sweep (optional)
+        if turn_pwm != 0:
+            print("↩️ slight heading correction turn")
+            drive(turn_pwm * direction, 0, 0, 0.2)
+
+        # alternate strafe direction each pass
+        direction *= -1
 
     stop()
-    print("✅ DORA EXPLORA pattern complete!")
+    print("✅ Zig-zag scan complete!")
 
 # ---------------- Main ----------------
 if __name__ == "__main__":
-    try:
-        pattern_square_explore(side_time=1.2, turn_time=0.35,
-                               speed_pwm=130, turn_pwm=100, passes=4)
-    except KeyboardInterrupt:
-        print("\n🧠 Interrupted by user.")
-    finally:
-        stop()
-        ser.close()
-        print("🔌 Serial closed. Goodbye!")
+    print("🟢 Initializing serial link to Teensy...")
+    time.sleep(2)  # give Teensy time to boot
+
+    # adjust width_s / height_s as needed for your test area
+    pattern_zigzag_scan(width_s=1.0, height_s=1.2, passes=8,
+                        forward_pwm=130, strafe_pwm=90, turn_pwm=0)
+
+    stop()
+    ser.close()
+
 
 
     stop()

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import serial, time, math
+import serial, time
 
 # ---------------- Serial Setup ----------------
 PORT = "/dev/ttyACM0"
@@ -11,7 +11,7 @@ FRAME = 0.05    # 50 ms → 20 Hz control loop
 def send(vx, vy, w):
     """
     Send velocity packet to Teensy.
-    NOTE: baseline convention => VX = rotation, VY = forward, W = strafe
+    NOTE: VX = rotation, VY = forward, W = strafe
     """
     packet = f"VX:{int(vx)},VY:{int(vy)},W:{int(w)}\n"
     ser.write(packet.encode("utf-8"))
@@ -28,52 +28,50 @@ def drive(vx, vy, w, duration):
         send(vx, vy, w)
         time.sleep(FRAME)
     stop()
-    time.sleep(0.25)   # small settle delay
+    time.sleep(0.25)
 
-# ---------------- Zig-Zag Forward Scan Pattern -----------
-def pattern_zigzag_scan(width_s=1.0, height_s=1.2, passes=6,
-                        forward_pwm=130, strafe_pwm=90, turn_pwm=0):
+# ---------------------------------------------------
+# 🟥🟦 1.5 m × 1.5 m SQUARE EXPLORATION PATTERN
+# ---------------------------------------------------
+def pattern_square_1p5m(
+        side_m=1.5,
+        speed_mps=0.30,
+        forward_pwm=130,
+        turn_pwm=100,
+        turn_time=0.35):
+
     """
-    Continuous forward 'zig-zag' pattern:
-    - move diagonally forward-right
-    - move diagonally forward-left
-    - repeat, always progressing forward
+    Drive a square of a given size in meters.
+    We convert meters → seconds using approximate rover speed.
     """
-    print(f"🟢 Starting DORA ZIG-ZAG SCAN ({passes} segments)...")
 
-    direction = 1  # start strafing right first
-    for p in range(passes):
-        print(f"🟩 Segment {p+1}/{passes}: moving forward + {'right' if direction==1 else 'left'}")
+    # estimate duration for one side
+    side_time = side_m / speed_mps
 
-        # combine forward motion and lateral strafe
-        vy = forward_pwm
-        w = strafe_pwm * direction
-        drive(0, vy, w, height_s)
+    print(f"🟢 Starting 1.5m square: side_time ≈ {side_time:.2f} sec")
 
-        # gentle yaw correction if you want a subtle camera sweep (optional)
-        if turn_pwm != 0:
-            print("↩️ slight heading correction turn")
-            drive(turn_pwm * direction, 0, 0, 0.2)
+    for i in range(4):
+        print(f"🟩 Side {i+1}/4 — Forward {side_m} m")
+        drive(0, forward_pwm, 0, side_time)
 
-        # alternate strafe direction each pass
-        direction *= -1
+        print("↩️ 90° Right Turn")
+        drive(turn_pwm, 0, 0, turn_time)
 
     stop()
-    print("✅ Zig-zag scan complete!")
+    print("✅ Completed 1.5 × 1.5 meter square!")
 
 # ---------------- Main ----------------
 if __name__ == "__main__":
     print("🟢 Initializing serial link to Teensy...")
-    time.sleep(2)  # give Teensy time to boot
+    time.sleep(2)
 
-    # adjust width_s / height_s as needed for your test area
-    pattern_zigzag_scan(width_s=1.0, height_s=1.2, passes=8,
-                        forward_pwm=130, strafe_pwm=90, turn_pwm=0)
-
-    stop()
-    ser.close()
-
-
+    pattern_square_1p5m(
+        side_m=1.5,
+        speed_mps=0.30,
+        forward_pwm=130,
+        turn_pwm=100,
+        turn_time=0.35
+    )
 
     stop()
     ser.close()

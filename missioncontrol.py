@@ -3,46 +3,53 @@ import time
 import threading
 import cv2
 
-# ---- Local Imports ----
 from sweep import pattern_square_1p5m, stop as sweep_stop, ser, drive
-from object_detector import PurpleBallDetector   # rename your file to object_detector.py
-                                                  # OR change this import to match your file name
+from object_detector import PurpleBallDetector
 
 # ======================================================
-#   STATE MACHINE
+# STATE MACHINE FLAGS
 # ======================================================
-RUN_SWEEP = True         # Sweep until a ball is detected
-BALL_FOUND = False       # Global flag set by camera thread
-BALL_DATA = None         # (x,y,radius)
-LOCK = threading.Lock()  # Protect shared data
+RUN_SWEEP = True
+BALL_FOUND = False
+STOP_ALL = False
+BALL_DATA = None
+LOCK = threading.Lock()
 
 
 # ======================================================
-#   CAMERA THREAD
+# IMMEDIATE STOP FUNCTION
+# ======================================================
+def send_stop():
+    """Send zero velocity packet."""
+    ser.write(b"VX:0,VY:0,W:0\n")
+    ser.flush()
+
+
+# ======================================================
+# CAMERA THREAD
 # ======================================================
 def camera_loop():
-    global BALL_FOUND, BALL_DATA, RUN_SWEEP
+    global BALL_FOUND, BALL_DATA, RUN_SWEEP, STOP_ALL
 
     detector = PurpleBallDetector()
     print("📷 Camera thread running...")
 
-    while RUN_SWEEP:  # Only search during sweep phase
+    while RUN_SWEEP and not STOP_ALL:
         frame = detector.picam2.capture_array()
-
         balls, _ = detector.detect_purple_ball(frame)
 
         if balls:
-            x, y, radius = balls[0]  # Take largest/first ball
+            x, y, radius = balls[0]
 
             with LOCK:
                 BALL_FOUND = True
+                STOP_ALL = True    # <<<<<< NEW: Immediate stop trigger
                 BALL_DATA = (x, y, radius)
-                RUN_SWEEP = False   # Signal main sweep loop to stop
+                RUN_SWEEP = False
 
             print(f"🟣 BALL DETECTED! {BALL_DATA}")
-            return  # stop camera loop once ball is detected
+            return
 
-        # A tiny sleep avoids 100% CPU
         time.sleep(0.01)
 
     detector.picam2.stop()
@@ -51,70 +58,27 @@ def camera_loop():
 
 
 # ======================================================
-#   BEHAVIOR BASED ON BALL POSITION
+# (NO TRACKING ALLOWED ANYMORE)
 # ======================================================
 def track_ball():
-    """
-    Drive using VX (rotation), VY (forward), W (strafe)
-    Based on ball position (x) and distance (radius)
-    """
+    """This will no longer be used when STOP_ALL == True."""
+    global STOP_ALL
 
-    print("🎯 Tracking ball...")
-    global BALL_DATA
+    print("🎯 Tracking ball... (but STOP_ALL overrides this)")
 
-    while True:
-        with LOCK:
-            if BALL_DATA is None:
-                continue
-            x, y, radius = BALL_DATA
+    while not STOP_ALL:
+        time.sleep(0.05)
 
-        # Byte map in object detector:
-        # x region + radius → behavior
-
-        vx = 0
-        vy = 0
-        w = 0
-
-        # -------------------------
-        # Right + forward
-        # -------------------------
-        if 380 <= x <= 639 and 25 <= radius <= 60:
-            vx = +120   # rotate right (your “VX is rotation” rule)
-            vy = 150    # forward
-
-        # -------------------------
-        # Forward
-        # -------------------------
-        elif 220 <= x <= 379 and 25 <= radius <= 399:
-            vx = 0
-            vy = 150
-
-        # -------------------------
-        # Left + forward
-        # -------------------------
-        elif 20 <= x <= 200 and 25 <= radius <= 60:
-            vx = -120   # rotate left
-            vy = 150
-
-        else:
-            # No valid behavior → stop
-            vx = vy = w = 0
-
-        packet = f"VX:{int(vx)},VY:{int(vy)},W:{int(w)}\n"
-        ser.write(packet.encode())
-        ser.flush()
-
-        time.sleep(0.05)  # 20 Hz
-
-    # unreachable but for safety:
+    # Force stop
+    send_stop()
     sweep_stop()
 
 
 # ======================================================
-#   MAIN LOOP
+# MAIN LOOP
 # ======================================================
 def main():
-    global RUN_SWEEP, BALL_FOUND
+    global RUN_SWEEP, BALL_FOUND, STOP_ALL
 
     print("🟢 Starting robot MAIN PROGRAM...")
     time.sleep(2)
@@ -123,9 +87,7 @@ def main():
     cam_thread = threading.Thread(target=camera_loop, daemon=True)
     cam_thread.start()
 
-    # -------------------------------
-    # Phase 1: Sweep until ball seen
-    # -------------------------------
+    # Phase 1: Sweep
     print("🟦 Phase 1: Sweep Pattern Running...")
     pattern_square_1p5m(
         side_m=1.5,
@@ -135,19 +97,23 @@ def main():
         turn_time=0.35
     )
 
-    # If sweep ends naturally and ball not seen → still check flag
+    # If sweep ends and camera hasn't triggered yet
     if not BALL_FOUND:
-        print("🟡 Sweep finished but no ball detected yet… waiting for camera…")
-        while not BALL_FOUND:
+        print("🟡 Sweep finished but no ball detected… waiting for camera…")
+        while not BALL_FOUND and not STOP_ALL:
             time.sleep(0.1)
 
     print("🟣 BALL FOUND! BREAKING SWEEP!")
-    sweep_stop()
 
-    # -------------------------------
-    # Phase 2: Track the Ball
-    # -------------------------------
-    track_ball()
+    # Stop movement immediately
+    STOP_ALL = True
+    sweep_stop()
+    send_stop()
+
+    print("🟥 ALL MOVEMENT STOPPED DUE TO BALL DETECTION")
+    print("Program complete.")
+
+    return
 
 
 # ======================================================
@@ -156,5 +122,7 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         sweep_stop()
+        send_stop()
         ser.close()
         print("\n🟥 Program terminated by user.")
+

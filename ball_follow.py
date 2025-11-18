@@ -89,57 +89,101 @@ R_DEADBAND = 30          # px radius error: inside this, don't move forward
 # ==========================
 # PURPLE BALL DETECTOR
 # ==========================
-def detect_purple_ball(self, frame):
-    hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+# ==========================
+# PURPLE BALL DETECTOR
+# ==========================
+class PurpleBallDetector:
+    def __init__(self):
+        self.picam2 = Picamera2()
+        self.configure_camera()
+        self.detection_radius = 20  # minimum radius in px (can tune)
 
-    # SUPER STRICT PURPLE RANGE
-    # You can tighten Hue even more based on what the mask looks like.
-    lower_purple = np.array([125, 120, 80])   # higher S and V required
-    upper_purple = np.array([145, 255, 255])
+    def configure_camera(self):
+        config = self.picam2.create_preview_configuration(
+            main={"size": (640, 480), "format": "RGB888"}
+        )
+        self.picam2.configure(config)
+        self.picam2.start()
 
-    mask = cv2.inRange(hsv, lower_purple, upper_purple)
+    def detect_purple_ball(self, frame):
+        hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
 
-    # Strong noise removal
-    kernel = np.ones((5, 5), np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-    mask = cv2.GaussianBlur(mask, (7, 7), 0)
+        # SUPER STRICT PURPLE RANGE
+        # Tweak these based on what you see in the mask window.
+        lower_purple = np.array([125, 120, 80])   # higher S and V required
+        upper_purple = np.array([145, 255, 255])
 
-    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        mask = cv2.inRange(hsv, lower_purple, upper_purple)
 
-    detected = []
+        # Strong noise removal
+        kernel = np.ones((5, 5), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        mask = cv2.GaussianBlur(mask, (7, 7), 0)
 
-    for c in contours:
-        area = cv2.contourArea(c)
-        if area < 300:      # VERY strict → must be a big blob
-            continue
+        contours, _ = cv2.findContours(
+            mask,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
 
-        (center, radius) = cv2.minEnclosingCircle(c)
-        if radius < 25:     # must be large
-            continue
+        detected = []
 
-        x, y = center
+        for c in contours:
+            area = cv2.contourArea(c)
+            if area < 300:      # VERY strict → must be a big blob
+                continue
 
-        # CIRCULARITY CHECK — strong
-        arc = cv2.arcLength(c, True)
-        if arc == 0:
-            continue
-        circularity = 4 * np.pi * area / (arc * arc)
-        if circularity < 0.65:     # much stricter (0.6 → 0.65)
-            continue
+            (center, radius) = cv2.minEnclosingCircle(c)
+            if radius < 25:     # must be large enough
+                continue
 
-        # SOLIDITY CHECK (reject hollow or weird shapes)
-        hull = cv2.convexHull(c)
-        hull_area = cv2.contourArea(hull)
-        if hull_area == 0:
-            continue
-        solidity = area / hull_area
-        if solidity < 0.85:        # must be dense and ball-like
-            continue
+            x, y = center
 
-        detected.append((int(x), int(y), int(radius)))
+            # CIRCULARITY CHECK — strong
+            arc = cv2.arcLength(c, True)
+            if arc == 0:
+                continue
+            circularity = 4 * np.pi * area / (arc * arc)
+            if circularity < 0.65:     # much stricter (0.6 → 0.65)
+                continue
 
-    return detected, mask
+            # SOLIDITY CHECK (reject hollow or weird shapes)
+            hull = cv2.convexHull(c)
+            hull_area = cv2.contourArea(hull)
+            if hull_area == 0:
+                continue
+            solidity = area / hull_area
+            if solidity < 0.85:        # must be dense and ball-like
+                continue
+
+            detected.append((int(x), int(y), int(radius)))
+
+        return detected, mask
+
+    def draw_detections(self, frame, balls):
+        for (x, y, radius) in balls:
+            cv2.circle(frame, (x, y), radius, (255, 0, 0), 2)
+            cv2.circle(frame, (x, y), 2, (0, 255, 0), 3)
+            cv2.putText(
+                frame,
+                f"Purple Ball: ({x}, {y})",
+                (x - radius, y - radius - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1
+            )
+            cv2.putText(
+                frame,
+                f"Radius: {radius}px",
+                (x - radius, y - radius - 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                1
+            )
+
 
 
 

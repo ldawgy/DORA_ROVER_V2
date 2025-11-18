@@ -89,14 +89,11 @@ R_DEADBAND = 30          # px radius error: inside this, don't move forward
 # ==========================
 # PURPLE BALL DETECTOR
 # ==========================
-# ==========================
-# PURPLE BALL DETECTOR
-# ==========================
 class PurpleBallDetector:
     def __init__(self):
         self.picam2 = Picamera2()
         self.configure_camera()
-        self.detection_radius = 20  # minimum radius in px (can tune)
+        self.detection_radius = 20  # minimum radius in px
 
     def configure_camera(self):
         config = self.picam2.create_preview_configuration(
@@ -108,84 +105,51 @@ class PurpleBallDetector:
     def detect_purple_ball(self, frame):
         hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
 
-        # SUPER STRICT PURPLE RANGE
-        # Tweak these based on what you see in the mask window.
-        lower_purple = np.array([125, 120, 80])   # higher S and V required
-        upper_purple = np.array([145, 255, 255])
+        # SLIGHTLY MORE LENIENT PURPLE RANGE
+        lower_purple = np.array([117, 60, 35])   # was [120, 80, 40]
+        upper_purple = np.array([155, 255, 255]) # was [150, 255, 200]
 
-        mask = cv2.inRange(hsv, lower_purple, upper_purple)
+        # Mask
+        purple_mask = cv2.inRange(hsv, lower_purple, upper_purple)
 
-        # Strong noise removal
-        kernel = np.ones((5, 5), np.uint8)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        mask = cv2.GaussianBlur(mask, (7, 7), 0)
+        # LIGHT morphology — not too aggressive
+        kernel = np.ones((3, 3), np.uint8)
+        purple_mask = cv2.morphologyEx(purple_mask, cv2.MORPH_OPEN, kernel)
+        purple_mask = cv2.morphologyEx(purple_mask, cv2.MORPH_CLOSE, kernel)
+
+        # Slight blur to stabilize contour edges
+        purple_mask = cv2.GaussianBlur(purple_mask, (5, 5), 0)
 
         contours, _ = cv2.findContours(
-            mask,
+            purple_mask,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE
         )
 
-        detected = []
+        detected_balls = []
 
-        for c in contours:
-            area = cv2.contourArea(c)
-            if area < 300:      # VERY strict → must be a big blob
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if area < 60:     # was 100
                 continue
 
-            (center, radius) = cv2.minEnclosingCircle(c)
-            if radius < 25:     # must be large enough
-                continue
-
+            (center, radius) = cv2.minEnclosingCircle(contour)
             x, y = center
 
-            # CIRCULARITY CHECK — strong
-            arc = cv2.arcLength(c, True)
+            if radius < 15:    # was 20
+                continue
+
+            # gentler circularity threshold
+            arc = cv2.arcLength(contour, True)
             if arc == 0:
                 continue
             circularity = 4 * np.pi * area / (arc * arc)
-            if circularity < 0.65:     # much stricter (0.6 → 0.65)
+            if circularity < 0.45:   # was 0.6
                 continue
 
-            # SOLIDITY CHECK (reject hollow or weird shapes)
-            hull = cv2.convexHull(c)
-            hull_area = cv2.contourArea(hull)
-            if hull_area == 0:
-                continue
-            solidity = area / hull_area
-            if solidity < 0.85:        # must be dense and ball-like
-                continue
+            detected_balls.append((int(x), int(y), int(radius)))
 
-            detected.append((int(x), int(y), int(radius)))
-
-        return detected, mask
-
-    def draw_detections(self, frame, balls):
-        for (x, y, radius) in balls:
-            cv2.circle(frame, (x, y), radius, (255, 0, 0), 2)
-            cv2.circle(frame, (x, y), 2, (0, 255, 0), 3)
-            cv2.putText(
-                frame,
-                f"Purple Ball: ({x}, {y})",
-                (x - radius, y - radius - 10),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 255),
-                1
-            )
-            cv2.putText(
-                frame,
-                f"Radius: {radius}px",
-                (x - radius, y - radius - 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (255, 255, 255),
-                1
-            )
-
-
-
+        return detected_balls, purple_mask
 
 
     def draw_detections(self, frame, balls):

@@ -143,6 +143,7 @@ def detect_purple_ball(self, frame):
 
 
 
+
     def draw_detections(self, frame, balls):
         for (x, y, radius) in balls:
             cv2.circle(frame, (x, y), radius, (255, 0, 0), 2)

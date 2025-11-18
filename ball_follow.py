@@ -103,26 +103,22 @@ class PurpleBallDetector:
         self.picam2.start()
 
     def detect_purple_ball(self, frame):
+        # Convert to HSV
         hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
 
-        # HSV ranges (tune if needed)
-        lower_purple = np.array([120, 80, 40])
-        upper_purple = np.array([150, 255, 200])
+        # VERY forgiving purple range
+        lower_purple = np.array([110, 40, 40])
+        upper_purple = np.array([170, 255, 255])
 
-        lower_purple_light = np.array([130, 50, 50])
-        upper_purple_light = np.array([160, 255, 255])
+        # Broad mask
+        mask = cv2.inRange(hsv, lower_purple, upper_purple)
 
-        purple_mask = cv2.inRange(hsv, lower_purple, upper_purple)
-        purple_mask_light = cv2.inRange(hsv, lower_purple_light, upper_purple_light)
+        # Gentle smoothing (keeps blobs connected)
+        mask = cv2.GaussianBlur(mask, (7, 7), 0)
 
-        final_mask = cv2.bitwise_or(purple_mask, purple_mask_light)
-
-        kernel = np.ones((5, 5), np.uint8)
-        final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel)
-        final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_OPEN, kernel)
-
+        # Extract contours
         contours, _ = cv2.findContours(
-            final_mask,
+            mask,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE
         )
@@ -131,24 +127,20 @@ class PurpleBallDetector:
 
         for contour in contours:
             area = cv2.contourArea(contour)
-            if area < 100:
+            if area < 20:      # VERY forgiving
                 continue
 
             (center, radius) = cv2.minEnclosingCircle(contour)
             x, y = center
 
-            if radius < self.detection_radius:
+            if radius < 5:
                 continue
 
-            arc = cv2.arcLength(contour, True)
-            if arc == 0:
-                continue
+            # No circularity test — removes strictness
+            detected_balls.append((int(x), int(y), int(radius)))
 
-            circularity = 4 * np.pi * area / (arc * arc)
-            if circularity > 0.6:
-                detected_balls.append((int(x), int(y), int(radius)))
+        return detected_balls, mask
 
-        return detected_balls, final_mask
 
     def draw_detections(self, frame, balls):
         for (x, y, radius) in balls:

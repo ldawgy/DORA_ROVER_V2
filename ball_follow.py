@@ -92,41 +92,49 @@ R_DEADBAND = 30          # px radius error: inside this, don't move forward
 def detect_purple_ball(self, frame):
     hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
 
-    # Balanced purple range (not too strict, not too loose)
-    lower_purple = np.array([115, 70, 40])   # requires some saturation & value
-    upper_purple = np.array([155, 255, 255])
+    # SUPER STRICT PURPLE RANGE
+    # You can tighten Hue even more based on what the mask looks like.
+    lower_purple = np.array([125, 120, 80])   # higher S and V required
+    upper_purple = np.array([145, 255, 255])
 
     mask = cv2.inRange(hsv, lower_purple, upper_purple)
 
-    # Light smoothing: keeps blobs intact but reduces speckle noise
-    mask = cv2.GaussianBlur(mask, (5, 5), 0)
-
-    # Optional small opening to remove random specks
-    kernel = np.ones((3, 3), np.uint8)
+    # Strong noise removal
+    kernel = np.ones((5, 5), np.uint8)
     mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.GaussianBlur(mask, (7, 7), 0)
 
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     detected = []
 
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area < 60:        # stricter than 20, looser than 100
+    for c in contours:
+        area = cv2.contourArea(c)
+        if area < 300:      # VERY strict → must be a big blob
             continue
 
-        (center, radius) = cv2.minEnclosingCircle(contour)
+        (center, radius) = cv2.minEnclosingCircle(c)
+        if radius < 25:     # must be large
+            continue
+
         x, y = center
 
-        if radius < 12:      # slightly forgiving but not too small
-            continue
-
-        # Add mild circularity check (prevents random purple noise)
-        arc = cv2.arcLength(contour, True)
+        # CIRCULARITY CHECK — strong
+        arc = cv2.arcLength(c, True)
         if arc == 0:
             continue
-
         circularity = 4 * np.pi * area / (arc * arc)
-        if circularity < 0.40:   # not too strict (was 0.6)
+        if circularity < 0.65:     # much stricter (0.6 → 0.65)
+            continue
+
+        # SOLIDITY CHECK (reject hollow or weird shapes)
+        hull = cv2.convexHull(c)
+        hull_area = cv2.contourArea(hull)
+        if hull_area == 0:
+            continue
+        solidity = area / hull_area
+        if solidity < 0.85:        # must be dense and ball-like
             continue
 
         detected.append((int(x), int(y), int(radius)))

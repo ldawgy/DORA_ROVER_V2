@@ -89,57 +89,50 @@ R_DEADBAND = 30          # px radius error: inside this, don't move forward
 # ==========================
 # PURPLE BALL DETECTOR
 # ==========================
-class PurpleBallDetector:
-    def __init__(self):
-        self.picam2 = Picamera2()
-        self.configure_camera()
-        self.detection_radius = 20  # minimum radius in px
+def detect_purple_ball(self, frame):
+    hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
 
-    def configure_camera(self):
-        config = self.picam2.create_preview_configuration(
-            main={"size": (640, 480), "format": "RGB888"}
-        )
-        self.picam2.configure(config)
-        self.picam2.start()
+    # Balanced purple range (not too strict, not too loose)
+    lower_purple = np.array([115, 70, 40])   # requires some saturation & value
+    upper_purple = np.array([155, 255, 255])
 
-    def detect_purple_ball(self, frame):
-        # Convert to HSV
-        hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+    mask = cv2.inRange(hsv, lower_purple, upper_purple)
 
-        # VERY forgiving purple range
-        lower_purple = np.array([110, 40, 40])
-        upper_purple = np.array([170, 255, 255])
+    # Light smoothing: keeps blobs intact but reduces speckle noise
+    mask = cv2.GaussianBlur(mask, (5, 5), 0)
 
-        # Broad mask
-        mask = cv2.inRange(hsv, lower_purple, upper_purple)
+    # Optional small opening to remove random specks
+    kernel = np.ones((3, 3), np.uint8)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
 
-        # Gentle smoothing (keeps blobs connected)
-        mask = cv2.GaussianBlur(mask, (7, 7), 0)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # Extract contours
-        contours, _ = cv2.findContours(
-            mask,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
+    detected = []
 
-        detected_balls = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < 60:        # stricter than 20, looser than 100
+            continue
 
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area < 20:      # VERY forgiving
-                continue
+        (center, radius) = cv2.minEnclosingCircle(contour)
+        x, y = center
 
-            (center, radius) = cv2.minEnclosingCircle(contour)
-            x, y = center
+        if radius < 12:      # slightly forgiving but not too small
+            continue
 
-            if radius < 5:
-                continue
+        # Add mild circularity check (prevents random purple noise)
+        arc = cv2.arcLength(contour, True)
+        if arc == 0:
+            continue
 
-            # No circularity test — removes strictness
-            detected_balls.append((int(x), int(y), int(radius)))
+        circularity = 4 * np.pi * area / (arc * arc)
+        if circularity < 0.40:   # not too strict (was 0.6)
+            continue
 
-        return detected_balls, mask
+        detected.append((int(x), int(y), int(radius)))
+
+    return detected, mask
+
 
 
     def draw_detections(self, frame, balls):

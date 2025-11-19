@@ -220,7 +220,7 @@ def compute_commands(ball):
         vx = 0
     else:
         # proportional turn
-        vx = -Kp_ROT * err_x
+        vx = +Kp_ROT * err_x
         vx = max(-MAX_ROT, min(MAX_ROT, vx))  # clamp
 
     # If angle is large → do NOT move forward yet

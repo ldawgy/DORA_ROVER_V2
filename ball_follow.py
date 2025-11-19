@@ -82,7 +82,7 @@ MAX_FWD = 110   # |VY| ≤ 110
 
 # Deadbands to avoid jitter
 X_DEADBAND = 25          # px: inside this, don't rotate
-X_ALIGN_PRIORITY = 60    # px: if outside this, rotate-only (no forward)
+X_ALIGN_PRIORITY = 120    # px: if outside this, rotate-only (no forward)
 R_DEADBAND = 30          # px radius error: inside this, don't move forward
 
 
@@ -224,8 +224,8 @@ def compute_commands(ball):
         vx = max(-MAX_ROT, min(MAX_ROT, vx))  # clamp
 
     # If angle is large → do NOT move forward yet
-    if abs(err_x) > X_ALIGN_PRIORITY:
-        return int(vx), 0, 0
+  #  if abs(err_x) > X_ALIGN_PRIORITY:
+      #  return int(vx), 0, 0
 
     # -------------------------
     # 3. FORWARD CONTROL (VY)

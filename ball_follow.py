@@ -193,48 +193,74 @@ def mission_complete(ball):
 
 def compute_commands(ball):
     """
-    Map ball (x, y, radius) → (VX, VY, W) in a gentle, L298N-safe way.
+    FINAL KINEMATICS CONTROLLER — ready for ECE296 demo.
+    Natural behavior:
+      • Large misalignment → rotate only
+      • Small misalignment → rotate + forward
+      • Approaches smoothly, brakes automatically near target
+      • No reverse (safe for L298N)
+      • No strafing (stable)
     """
+
     if ball is None:
-        return 0, 0, 0  # no ball = stop
+        return 0, 0, 0   # stop if no ball
 
     x, y, radius = ball
 
-    # ----- Rotation (VX) based on x error -----
-    err_x = x - TARGET_X
+    # -------------------------
+    # 1. Compute errors
+    # -------------------------
+    err_x = x - TARGET_X               # horizontal (pixels)
+    err_r = TARGET_R - radius          # positive = too far
 
+    # -------------------------
+    # 2. ROTATION CONTROL (VX)
+    # -------------------------
     if abs(err_x) <= X_DEADBAND:
         vx = 0
     else:
-        vx = -Kp_ROT * err_x  # sign may need flipping if turns the wrong way
-        if vx > 0:
-            vx = min(vx, MAX_ROT)
-        else:
-            vx = max(vx, -MAX_ROT)
+        # proportional turn
+        vx = -Kp_ROT * err_x
+        vx = max(-MAX_ROT, min(MAX_ROT, vx))  # clamp
 
-    # ----- Forward (VY) based on radius error -----
-    err_r = TARGET_R - radius  # positive = too far (need forward)
+    # If angle is large → do NOT move forward yet
+    if abs(err_x) > X_ALIGN_PRIORITY:
+        return int(vx), 0, 0
 
-    if abs(err_r) <= R_DEADBAND:
+    # -------------------------
+    # 3. FORWARD CONTROL (VY)
+    # -------------------------
+    if err_r <= 0:
+        # Too close → no reverse (safe)
         vy = 0
     else:
-        # Gentle forward only; no aggressive backing up for now
-        if err_r > 0:
-            vy = Kp_FWD * err_r
-            vy = min(vy, MAX_FWD)
-        else:
-            # too close: for now, just stop instead of reversing
-            vy = 0
+        # proportional forward
+        vy = Kp_FWD * err_r
 
-    # ----- Priority: align before charging -----
-    if abs(err_x) > X_ALIGN_PRIORITY:
-        # If badly misaligned, rotate in place; don't drive forward
-        vy = 0
+        # CREEP MODE near the ball
+        if radius > 350:
+            vy = min(vy, 40)  # very gentle crawl
 
-    # No strafing to keep it gentle
-    w = 0
+        # far away → allow more speed
+        vy = min(vy, MAX_FWD)
+
+    # -------------------------
+    # 4. SMALL-ANGLE COUPLED MOTION
+    # -------------------------
+    # If alignment is close, allow mixed rotation + forward
+    if abs(err_x) < 45:
+        pass  # keep vx & vy as-is
+    else:
+        # mid misalignment → reduce forward to prevent diagonal drift
+        vy = min(vy, 50)
+
+    # -------------------------
+    # 5. FINAL OUTPUT
+    # -------------------------
+    w = 0   # NO STRAFE — SAFE MODE
 
     return int(vx), int(vy), int(w)
+
 
 
 # ==========================

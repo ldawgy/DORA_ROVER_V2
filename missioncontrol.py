@@ -103,7 +103,7 @@ def drive_for_duration(vx, vy, w, dur):
     time.sleep(0.1)
 
 
-def pattern_square_sweep(side=1.5, mps=0.30, fwd=130, turn=100, tturn=0.35):
+def pattern_square_sweep(side=1.5, mps=0.30, fwd=130, turn=100, tturn=5):
     """
     Same behavior as your sweep.pattern_square but cooperative with the state machine.
     """

@@ -20,7 +20,7 @@ def drive(vx, vy, w, dur):
         time.sleep(FRAME)
     stop(); time.sleep(0.1)
 
-def pattern_square(side=1.5, mps=0.30, fwd=130, turn=100, tturn=0.35):
+def pattern_square(side=1.5, mps=0.30, fwd=130, turn=100, tturn=5):
     side_t = side / mps
     for _ in range(4):
         drive(0, fwd, 0, side_t)   # forward

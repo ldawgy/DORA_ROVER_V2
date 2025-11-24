@@ -27,21 +27,22 @@ def drive(vx, vy, w, dur):
     stop()
     time.sleep(0.2)
 
+
 # ----------------------------------------------------------
 # MOTION COMMANDS FOR EXPERIMENT
 # ----------------------------------------------------------
-# forward = +vy (based on your pattern_square usage)
-FWD_SPEED = 130       # same as your demo code
-REV_SPEED = -130      # backward
-MPS       = 0.30      # assumed forward physical velocity (m/s)
+FWD_SPEED = 130
+REV_SPEED = -130
+
+# UPDATED REAL MEASURED SPEED (no calibration, just fixed)
+MPS       = 0.295     # corrected from 0.30
 PAUSE     = 45        # seconds of stop time at each 0.5m mark
+
 
 # ----------------------------------------------------------
 # DRIVE EXACTLY 0.5 METERS, THEN STOP FOR MEASUREMENT
 # ----------------------------------------------------------
-
 def drive_half_meter(vy_speed):
-    """Drive approx 0.5m using side = dist / mps."""
     duration = 0.5 / MPS     # time = distance / mps
     drive(0, vy_speed, 0, duration)
     stop()
@@ -57,9 +58,10 @@ def run_pass(vy_speed, label="FORWARD"):
     print("Align the rover on the 0-meter mark. Starting in 5 seconds...")
     time.sleep(5)
 
-    # 10 stops → 0.5m, 1m, 1.5m ... 5m
+    # 10 stops → 0.5m, 1.0m, ..., 5.0m
     for i in range(1, 11):
-        print(f"\nMoving to {i*0.5:.1f} meters...")
+        dist = i * 0.5
+        print(f"\nMoving to {dist:.2f} meters...")
         drive_half_meter(vy_speed)
 
     stop()
@@ -76,7 +78,7 @@ if __name__ == "__main__":
         # FORWARD 5m
         run_pass(FWD_SPEED, label="FORWARD")
 
-        print("\nTake a break, re-align the rover at 0 meters for backward run...")
+        print("\nTake a break and re-align the rover at the 0-meter mark for backward run...")
         time.sleep(20)
 
         # BACKWARD 5m

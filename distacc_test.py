@@ -35,7 +35,7 @@ FWD_SPEED = 130
 REV_SPEED = -130
 
 # UPDATED REAL MEASURED SPEED (no calibration, just fixed)
-MPS       = 0.295     # corrected from 0.30
+MPS       = 0.305     # corrected from 0.30
 PAUSE     = 45        # seconds of stop time at each 0.5m mark
 
 
